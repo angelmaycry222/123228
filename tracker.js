@@ -20,25 +20,20 @@ const WATCHED_WALLETS = [
 
 const notifiedMints = new Set()
 
-async function fetchRecentBuys(wallet) {
+async function fetchRecentTransfers(wallet) {
 	const url = `https://api.helius.xyz/v0/addresses/${wallet}/transactions?api-key=${HELIUS_API_KEY}`
 	try {
 		const { data } = await axios.get(url)
-		console.log(`Fetched ${data.length} tx for ${wallet}`)
 		return data
-			.filter(tx => {
-				console.log(`TX TYPE: ${tx.type}`)
-				console.log(
-					`TOKEN BALANCE CHANGES:`,
-					JSON.stringify(tx.tokenTransfers || tx.tokenBalanceChanges || [])
-				)
-				return tx.tokenTransfers?.length || tx.tokenBalanceChanges?.length
-			})
-			.map(tx => {
+			.filter(tx => tx.tokenTransfers?.length || tx.tokenBalanceChanges?.length)
+			.flatMap(tx => {
 				const changes = tx.tokenTransfers || tx.tokenBalanceChanges || []
-				return changes.map(c => c.mint).filter(Boolean)
+				return changes.map(c => ({
+					mint: c.mint,
+					amount: c.tokenAmount || c.amount,
+					type: c.tokenAmount > 0 || c.amount > 0 ? 'BUY' : 'SELL',
+				}))
 			})
-			.flat()
 	} catch (err) {
 		console.error(
 			`Error fetching tx for ${wallet}:`,
@@ -48,24 +43,41 @@ async function fetchRecentBuys(wallet) {
 	}
 }
 
+async function getTokenName(mint) {
+	const url = `https://api.helius.xyz/v0/tokens/metadata?api-key=${HELIUS_API_KEY}`
+	try {
+		const { data } = await axios.post(url, { mintAccounts: [mint] })
+		return data[0]?.onChainMetadata?.metadata?.name || 'Unknown'
+	} catch {
+		return 'Unknown'
+	}
+}
+
 async function checkForMatches() {
-	const buyCounts = {}
+	const tokenCounts = {}
+	const tokenActions = {}
 	for (const wallet of WATCHED_WALLETS) {
-		const buys = await fetchRecentBuys(wallet)
-		const unique = new Set(buys)
-		console.log(`Wallet ${wallet} recent mints:`, Array.from(unique))
-		for (const mint of unique) {
-			buyCounts[mint] = (buyCounts[mint] || 0) + 1
+		const transfers = await fetchRecentTransfers(wallet)
+		const unique = new Map()
+		for (const t of transfers) {
+			unique.set(t.mint, t.type)
+		}
+		for (const [mint, type] of unique) {
+			tokenCounts[mint] = (tokenCounts[mint] || 0) + 1
+			tokenActions[mint] = tokenActions[mint] || new Set()
+			tokenActions[mint].add(type)
 		}
 	}
 
-	for (const [mint, count] of Object.entries(buyCounts)) {
-		if (count >= 1 && !notifiedMints.has(mint)) {
+	for (const [mint, count] of Object.entries(tokenCounts)) {
+		if (count >= 2 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
+			const name = await getTokenName(mint)
+			const actions = Array.from(tokenActions[mint]).join(', ')
 			bot
 				.sendMessage(
 					CHAT_ID,
-					`🚨 ${count} wallets interacted with token: ${mint}`
+					`🚨(HAUNTED MOUND EXCLUSIVE) ${count} wallets ${actions} token: ${mint} (${name})`
 				)
 				.catch(err => console.error('Telegram error:', err.message))
 		}
@@ -73,8 +85,7 @@ async function checkForMatches() {
 }
 
 cron.schedule('*/15 * * * * *', async () => {
-	console.log(new Date().toISOString(), 'Checking token interactions...')
 	await checkForMatches()
 })
 
-console.log('Watcher started. Monitoring token interactions every 15 seconds.')
+console.log('Watcher started. Monitoring buys and sells every 15 seconds.')
