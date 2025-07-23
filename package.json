@@ -1,6 +1,7 @@
 {
   "name": "solana-cabal-tracker",
   "version": "1.0.0",
+  "type": "module",
   "main": "tracker.js",
   "scripts": {
     "start": "node tracker.js"
