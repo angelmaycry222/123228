@@ -24,52 +24,53 @@ const WATCHED_WALLETS = [
 
 const notifiedMints = new Set()
 
-// Fetch tokens held by a given wallet; returns array of mint addresses
-async function fetchWalletTokens(wallet) {
-	const url = `https://api.helius.xyz/v0/addresses/${wallet}/tokens?api-key=${HELIUS_API_KEY}`
+// Fetch recent swap mints bought by a wallet in the last interval
+async function fetchRecentBuys(wallet) {
+	const url = `https://api.helius.xyz/v0/addresses/${wallet}/transactions?api-key=${HELIUS_API_KEY}`
 	try {
 		const { data } = await axios.get(url)
-		return data.map(t => t.mint)
+		// Filter only SWAP transactions and extract destination mint
+		return (
+			data
+				.filter(
+					tx => tx.type === 'SWAP' && tx.swapChanges && tx.swapChanges.after
+				)
+				.map(tx => tx.swapChanges.after.mint) || []
+		)
 	} catch (err) {
-		if (err.response && err.response.status === 404) {
-			console.warn(`No token data for wallet ${wallet}`)
-			return []
-		}
-		console.error(`Error fetching tokens for ${wallet}:`, err.message)
+		console.error(
+			`Error fetching tx for ${wallet}:`,
+			err.response?.status || err.message
+		)
 		return []
 	}
 }
 
 async function checkForMatches() {
-	const tokenCounts = {}
+	const buyCounts = {}
 	for (const wallet of WATCHED_WALLETS) {
-		const tokens = await fetchWalletTokens(wallet)
-		const unique = new Set(tokens)
-		unique.forEach(mint => {
-			tokenCounts[mint] = (tokenCounts[mint] || 0) + 1
-		})
+		const buys = await fetchRecentBuys(wallet)
+		const unique = new Set(buys)
+		for (const mint of unique) {
+			buyCounts[mint] = (buyCounts[mint] || 0) + 1
+		}
 	}
 
-	// Notify for any token held by 2 or more wallets
-	Object.entries(tokenCounts).forEach(([mint, count]) => {
+	// Notify for any token bought by 2 or more wallets in this interval
+	for (const [mint, count] of Object.entries(buyCounts)) {
 		if (count >= 2 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
 			bot
-				.sendMessage(
-					CHAT_ID,
-					`🚨 Multiple wallets (${count}) hold token: ${mint}`
-				)
-				.catch(err =>
-					console.error('Failed to send Telegram message:', err.message)
-				)
+				.sendMessage(CHAT_ID, `🚨 ${count} wallets bought token: ${mint}`)
+				.catch(err => console.error('Telegram error:', err.message))
 		}
-	})
+	}
 }
 
 // Check every 15 seconds
 cron.schedule('*/15 * * * * *', async () => {
-	console.log(new Date().toISOString(), 'Checking for common tokens...')
+	console.log(new Date().toISOString(), 'Checking recent buys by wallets...')
 	await checkForMatches()
 })
 
-console.log('Watcher started. Checking every 15 seconds.')
+console.log('Watcher started. Monitoring SWAPs every 15 seconds.')
