@@ -50,6 +50,7 @@ async function checkForMatches() {
 	const buyCounts = {}
 	for (const wallet of WATCHED_WALLETS) {
 		const buys = await fetchRecentBuys(wallet)
+		console.log(`Wallet ${wallet} bought:`, buys)
 		const unique = new Set(buys)
 		for (const mint of unique) {
 			buyCounts[mint] = (buyCounts[mint] || 0) + 1
