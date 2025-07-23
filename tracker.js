@@ -1,12 +1,6 @@
-import fs from 'fs'
-import path from 'path'
 import axios from 'axios'
 import TelegramBot from 'node-telegram-bot-api'
 import cron from 'node-cron'
-import { fileURLToPath } from 'url'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const CHAT_ID = process.env.CHAT_ID
@@ -30,11 +24,13 @@ async function fetchRecentBuys(wallet) {
 	const url = `https://api.helius.xyz/v0/addresses/${wallet}/transactions?api-key=${HELIUS_API_KEY}`
 	try {
 		const { data } = await axios.get(url)
+		console.log(`Fetched ${data.length} tx for ${wallet}`)
 		return (
 			data
-				.filter(
-					tx => tx.type === 'SWAP' && tx.swapChanges && tx.swapChanges.after
-				)
+				.filter(tx => {
+					console.log(JSON.stringify(tx, null, 2))
+					return tx.type === 'SWAP' && tx.swapChanges && tx.swapChanges.after
+				})
 				.map(tx => tx.swapChanges.after.mint) || []
 		)
 	} catch (err) {
@@ -58,7 +54,7 @@ async function checkForMatches() {
 	}
 
 	for (const [mint, count] of Object.entries(buyCounts)) {
-		if (count >= 2 && !notifiedMints.has(mint)) {
+		if (count >= 1 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
 			bot
 				.sendMessage(CHAT_ID, `🚨 ${count} wallets bought token: ${mint}`)
