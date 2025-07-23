@@ -25,14 +25,20 @@ async function fetchRecentBuys(wallet) {
 	try {
 		const { data } = await axios.get(url)
 		console.log(`Fetched ${data.length} tx for ${wallet}`)
-		return (
-			data
-				.filter(tx => {
-					console.log(JSON.stringify(tx, null, 2))
-					return tx.type === 'SWAP' && tx.swapChanges && tx.swapChanges.after
-				})
-				.map(tx => tx.swapChanges.after.mint) || []
-		)
+		return data
+			.filter(tx => {
+				console.log(`TX TYPE: ${tx.type}`)
+				console.log(
+					`TOKEN BALANCE CHANGES:`,
+					JSON.stringify(tx.tokenTransfers || tx.tokenBalanceChanges || [])
+				)
+				return tx.tokenTransfers?.length || tx.tokenBalanceChanges?.length
+			})
+			.map(tx => {
+				const changes = tx.tokenTransfers || tx.tokenBalanceChanges || []
+				return changes.map(c => c.mint).filter(Boolean)
+			})
+			.flat()
 	} catch (err) {
 		console.error(
 			`Error fetching tx for ${wallet}:`,
@@ -47,7 +53,7 @@ async function checkForMatches() {
 	for (const wallet of WATCHED_WALLETS) {
 		const buys = await fetchRecentBuys(wallet)
 		const unique = new Set(buys)
-		console.log(`Wallet ${wallet} recent buys:`, Array.from(unique))
+		console.log(`Wallet ${wallet} recent mints:`, Array.from(unique))
 		for (const mint of unique) {
 			buyCounts[mint] = (buyCounts[mint] || 0) + 1
 		}
@@ -57,15 +63,18 @@ async function checkForMatches() {
 		if (count >= 1 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
 			bot
-				.sendMessage(CHAT_ID, `🚨 ${count} wallets bought token: ${mint}`)
+				.sendMessage(
+					CHAT_ID,
+					`🚨 ${count} wallets interacted with token: ${mint}`
+				)
 				.catch(err => console.error('Telegram error:', err.message))
 		}
 	}
 }
 
 cron.schedule('*/15 * * * * *', async () => {
-	console.log(new Date().toISOString(), 'Checking recent buys by wallets...')
+	console.log(new Date().toISOString(), 'Checking token interactions...')
 	await checkForMatches()
 })
 
-console.log('Watcher started. Monitoring SWAPs every 15 seconds.')
+console.log('Watcher started. Monitoring token interactions every 15 seconds.')
