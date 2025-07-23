@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename)
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const CHAT_ID = process.env.CHAT_ID
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false })
 
@@ -21,41 +22,53 @@ const WATCHED_WALLETS = [
 	'Wallet5PublicKey',
 ]
 
-const HELIUS_API_KEY = process.env.HELIUS_API_KEY
-
 const notifiedMints = new Set()
 
+// Fetch tokens held by a given wallet; returns array of mint addresses
 async function fetchWalletTokens(wallet) {
 	const url = `https://api.helius.xyz/v0/addresses/${wallet}/tokens?api-key=${HELIUS_API_KEY}`
-	const { data } = await axios.get(url)
-	return data.map(t => t.mint)
+	try {
+		const { data } = await axios.get(url)
+		return data.map(t => t.mint)
+	} catch (err) {
+		if (err.response && err.response.status === 404) {
+			console.warn(`No token data for wallet ${wallet}`)
+			return []
+		}
+		console.error(`Error fetching tokens for ${wallet}:`, err.message)
+		return []
+	}
 }
 
 async function checkForMatches() {
-	const allTokens = []
+	const tokenCounts = {}
 	for (const wallet of WATCHED_WALLETS) {
 		const tokens = await fetchWalletTokens(wallet)
-		allTokens.push(new Set(tokens))
+		const unique = new Set(tokens)
+		unique.forEach(mint => {
+			tokenCounts[mint] = (tokenCounts[mint] || 0) + 1
+		})
 	}
 
-	const commonTokens = [...allTokens[0]]
-	for (let i = 1; i < allTokens.length; i++) {
-		commonTokens = commonTokens.filter(token => allTokens[i].has(token))
-	}
-
-	for (const mint of commonTokens) {
-		if (!notifiedMints.has(mint)) {
+	// Notify for any token held by 2 or more wallets
+	Object.entries(tokenCounts).forEach(([mint, count]) => {
+		if (count >= 2 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
-			await bot.sendMessage(
-				CHAT_ID,
-				`🚨 Multiple wallets bought token: ${mint}`
-			)
+			bot
+				.sendMessage(
+					CHAT_ID,
+					`🚨 Multiple wallets (${count}) hold token: ${mint}`
+				)
+				.catch(err =>
+					console.error('Failed to send Telegram message:', err.message)
+				)
 		}
-	}
+	})
 }
 
+// Check every 15 seconds
 cron.schedule('*/15 * * * * *', async () => {
-	console.log('Checking for common tokens...')
+	console.log(new Date().toISOString(), 'Checking for common tokens...')
 	await checkForMatches()
 })
 
