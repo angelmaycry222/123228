@@ -14,10 +14,10 @@ const CHAT_ID = process.env.CHAT_ID
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false })
 
 const WATCHED_WALLETS = [
-	'Wallet1PublicKey',
-	'Wallet2PublicKey',
-	'Wallet3PublicKey',
-	'Wallet4PublicKey',
+	'Ab2LKcStUSNCxbZ2RKeEyCz1nrKw3AgKBjYMrgsaRdtN',
+	'8N4vAeG7sYLHjnaADggH2nkbWDwTXEnEeJRRrHKX6fuj',
+	'6TbHffE6GxcGp536avxZpNMEd8uKp2EoP2egAeWWbonk',
+	'4zLnAxHtXFqSccSX4kYunfoK6UjbP1gx62ZyycPX7Wi7',
 	'Wallet5PublicKey',
 ]
 
