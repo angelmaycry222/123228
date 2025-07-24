@@ -15,6 +15,8 @@ const WATCHED_WALLETS = [
 	'4zLnAxHtXFqSccSX4kYunfoK6UjbP1gx62ZyycPX7Wi7',
 	'7FREb7zknSCCq5p8tbaD7EkfgmDvaJ4Jawq2o67VFRcC',
 	'AtFS2W1dMWX2oBef9dJ3gSx5VKXfzqvasbY1iMWAMxGT',
+	'HfqckzgVY2L16qYd1W5m674jBFt5jLGNW7iksKFLMJaf',
+	'FjFvvt381a9eJccuCMxVXRmJBm33rMkZGUy7ghk8rFpV',
 ]
 
 // Храним последнюю подпись
