@@ -44,7 +44,13 @@ async function fetchTransfers(wallet) {
 
 	for (const { signature } of sigInfos) {
 		if (lastSignatures[wallet] === signature) break
-		const tx = await connection.getParsedTransaction(signature, 'confirmed')
+
+		// <-- вот эта строка изменена -->
+		const tx = await connection.getParsedTransaction(signature, {
+			commitment: 'confirmed',
+			maxSupportedTransactionVersion: 0,
+		})
+
 		if (tx?.meta) {
 			const pre = tx.meta.preTokenBalances || []
 			const post = tx.meta.postTokenBalances || []
@@ -59,6 +65,7 @@ async function fetchTransfers(wallet) {
 			}
 		}
 	}
+
 	if (sigInfos.length) lastSignatures[wallet] = sigInfos[0].signature
 	return transfers
 }
