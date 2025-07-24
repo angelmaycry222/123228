@@ -26,17 +26,33 @@ const notifiedMints = new Set()
 // Задержка между запросами к API (мс)
 const REQUEST_DELAY = 500
 
-// Получаем транзакции одного кошелька, ограничиваем количеством
+// Функция задержки
+function sleep(ms) {
+	return new Promise(res => setTimeout(res, ms))
+}
+
+// Получаем транзакции одного кошелька, ограничиваем количеством, с retry при 429
 async function fetchWalletTx(wallet) {
 	const url = `https://api.helius.xyz/v0/addresses/${wallet}/transactions?limit=20&api-key=${HELIUS_API_KEY}`
 	try {
 		const { data } = await axios.get(url)
 		return data
 	} catch (err) {
-		console.error(
-			`Error fetching tx for ${wallet}:`,
-			err.response?.status || err.message
-		)
+		const status = err.response?.status
+		console.error(`Error fetching tx for ${wallet}:`, status || err.message)
+		if (status === 429) {
+			console.warn(`Rate limited for ${wallet}, retrying after delay...`)
+			await sleep(REQUEST_DELAY * 10) // 5 сек
+			try {
+				const { data: retryData } = await axios.get(url)
+				return retryData
+			} catch (retryErr) {
+				console.error(
+					`Retry failed for ${wallet}:`,
+					retryErr.response?.status || retryErr.message
+				)
+			}
+		}
 		return []
 	}
 }
@@ -94,7 +110,7 @@ async function checkForMatches() {
 			actionCounts[t.mint].types.add(t.type)
 		})
 
-		await new Promise(res => setTimeout(res, REQUEST_DELAY))
+		await sleep(REQUEST_DELAY)
 	}
 
 	for (const [mint, info] of Object.entries(actionCounts)) {
