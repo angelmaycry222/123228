@@ -28,10 +28,13 @@ const WATCHED_WALLETS = [
 // State
 const lastSignatures = {}
 const notifiedMints = new Set()
-// Для каждого mint — Set кошельков, которые купили и ещё не продали\ nconst heldMints = {}
+// Для каждого mint — Set кошельков, которые купили и ещё не продали
+const heldMints = {}
 
-// Utility sleep\ nfunction sleep(ms) {
-return new Promise(resolve => setTimeout(resolve, ms))
+// Utility sleep
+function sleep(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms))
+}
 
 // Fetch and parse recent transfers for a wallet
 async function fetchTransfers(wallet) {
