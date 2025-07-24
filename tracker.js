@@ -71,31 +71,37 @@ async function fetchTransfers(wallet) {
 }
 
 // Main check function
+// Main check function
 async function checkForMatches() {
 	const actionCounts = {}
 
 	for (const wallet of WATCHED_WALLETS) {
 		const tr = await fetchTransfers(wallet)
-		const unique = new Map(tr.map(t => [`${t.mint}|${t.type}`, t]))
-		for (const t of unique.values()) {
-			actionCounts[t.mint] = actionCounts[t.mint] || {
-				count: 0,
-				types: new Set(),
+		// Оставляем только покупки
+		const buys = tr.filter(t => t.type === 'BUY')
+		// Уникальные минты (на случай, если один кошелёк купил токен дважды)
+		const uniqueBuys = new Set(buys.map(t => t.mint))
+
+		for (const mint of uniqueBuys) {
+			if (!actionCounts[mint]) {
+				actionCounts[mint] = {
+					wallets: new Set(),
+				}
 			}
-			actionCounts[t.mint].count++
-			actionCounts[t.mint].types.add(t.type)
+			actionCounts[mint].wallets.add(wallet)
 		}
+
 		await sleep(1000) // mitigate rate limits
 	}
 
 	for (const [mint, info] of Object.entries(actionCounts)) {
-		if (info.count >= 2 && !notifiedMints.has(mint)) {
+		// Если купили как минимум два разных кошелька
+		if (info.wallets.size >= 2 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
-			const types = Array.from(info.types).join(', ')
 			bot
 				.sendMessage(
 					CHAT_ID,
-					`🚨 (H-H-HAUNTAHOLICS REAL HAUNTED MOUND) ${info.count} wallets ${types} token: ${mint}`
+					`🚨 (H-H-HAUNTAHOLICS REAL HAUNTED MOUND) ${info.wallets.size} разных кошелька купили токен ${mint}`
 				)
 				.catch(err => console.error('Telegram error:', err.message))
 		}
