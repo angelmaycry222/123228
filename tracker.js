@@ -15,47 +15,50 @@ const WATCHED_WALLETS = [
 	'4zLnAxHtXFqSccSX4kYunfoK6UjbP1gx62ZyycPX7Wi7',
 	'7FREb7zknSCCq5p8tbaD7EkfgmDvaJ4Jawq2o67VFRcC',
 	'AtFS2W1dMWX2oBef9dJ3gSx5VKXfzqvasbY1iMWAMxGT',
-	'HfqckzgVY2L16qYd1W5m674jBFt5jLGNW7iksKFLMJaf',
-	'FjFvvt381a9eJccuCMxVXRmJBm33rMkZGUy7ghk8rFpV',
 ]
 
-// Храним последний просмотренный подпись для каждого кошелька
+// Храним последнюю подпись
 const lastSignatures = {}
 const notifiedMints = new Set()
 
-// Batch fetch transactions for all wallets
-async function fetchRecentTxBatch() {
-	const url = `https://api.helius.xyz/v0/addresses/transactions?api-key=${HELIUS_API_KEY}`
+// Задержка между запросами к API (мс)
+const REQUEST_DELAY = 500
+
+// Получаем транзакции одного кошелька, ограничиваем количеством
+async function fetchWalletTx(wallet) {
+	const url = `https://api.helius.xyz/v0/addresses/${wallet}/transactions?limit=20&api-key=${HELIUS_API_KEY}`
 	try {
-		const { data } = await axios.post(url, { addresses: WATCHED_WALLETS })
-		return data // объект { address: [tx...] }
+		const { data } = await axios.get(url)
+		return data
 	} catch (err) {
-		console.error('Batch fetch error:', err.response?.status || err.message)
-		return {}
+		console.error(
+			`Error fetching tx for ${wallet}:`,
+			err.response?.status || err.message
+		)
+		return []
 	}
 }
 
-// Извлекаем переводы токенов (mint, amount, type)
-function parseTransfers(txList, wallet) {
-	const sinceSig = lastSignatures[wallet]
-	const newTransfers = []
-	for (const tx of txList) {
-		if (sinceSig && tx.signature === sinceSig) break // уже видели дальше
+// Парсим новые токен-трансферы
+function parseNewTransfers(txs, wallet) {
+	const since = lastSignatures[wallet]
+	const newList = []
+	for (const tx of txs) {
+		if (since && tx.signature === since) break
 		if (tx.tokenTransfers?.length) {
-			for (const t of tx.tokenTransfers) {
-				newTransfers.push({
+			tx.tokenTransfers.forEach(t =>
+				newList.push({
 					mint: t.mint,
-					amount: t.amount, // положительное при зачислении
 					type: Number(t.amount) > 0 ? 'BUY' : 'SELL',
 				})
-			}
+			)
 		}
 	}
-	if (txList.length) lastSignatures[wallet] = txList[0].signature
-	return newTransfers
+	if (txs.length) lastSignatures[wallet] = txs[0].signature
+	return newList
 }
 
-// Получаем название токена
+// Кеш названий
 const tokenNameCache = {}
 async function getTokenName(mint) {
 	if (tokenNameCache[mint]) return tokenNameCache[mint]
@@ -70,27 +73,28 @@ async function getTokenName(mint) {
 	}
 }
 
-// Основная проверка
+// Проверяем пересечения
 async function checkForMatches() {
-	const batchData = await fetchRecentTxBatch()
 	const actionCounts = {}
 
 	for (const wallet of WATCHED_WALLETS) {
-		const txs = batchData[wallet] || []
-		const transfers = parseTransfers(txs, wallet)
-		// Уникально по mint+type
+		const txs = await fetchWalletTx(wallet)
+		const transfers = parseNewTransfers(txs, wallet)
 		const unique = new Map()
-		for (const tr of transfers) unique.set(`${tr.mint}|${tr.type}`, tr)
+		transfers.forEach(t => unique.set(`${t.mint}|${t.type}`, t))
 
-		for (const [key, tr] of unique) {
-			const { mint, type } = tr
-			actionCounts[mint] = actionCounts[mint] || { count: 0, types: new Set() }
-			actionCounts[mint].count++
-			actionCounts[mint].types.add(type)
-		}
+		unique.forEach(t => {
+			actionCounts[t.mint] = actionCounts[t.mint] || {
+				count: 0,
+				types: new Set(),
+			}
+			actionCounts[t.mint].count++
+			actionCounts[t.mint].types.add(t.type)
+		})
+
+		await new Promise(res => setTimeout(res, REQUEST_DELAY))
 	}
 
-	// Уведомляем о токенах с count>=2
 	for (const [mint, info] of Object.entries(actionCounts)) {
 		if (info.count >= 2 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
@@ -106,10 +110,10 @@ async function checkForMatches() {
 	}
 }
 
-// Cron раз в минуту
+// Запуск раз в 30 секунд
 cron.schedule('*/30 * * * * *', async () => {
-	console.log(new Date().toISOString(), 'Batch checking wallets...')
+	console.log(new Date().toISOString(), 'Checking wallets sequentially...')
 	await checkForMatches()
 })
 
-console.log('Watcher started. Batch mode, checking every minute.')
+console.log('Watcher started. Sequential mode, checking every 30s.')
