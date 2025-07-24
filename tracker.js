@@ -28,11 +28,10 @@ const WATCHED_WALLETS = [
 // State
 const lastSignatures = {}
 const notifiedMints = new Set()
+// Для каждого mint — Set кошельков, которые купили и ещё не продали\ nconst heldMints = {}
 
-// Utility sleep
-function sleep(ms) {
-	return new Promise(resolve => setTimeout(resolve, ms))
-}
+// Utility sleep\ nfunction sleep(ms) {
+return new Promise(resolve => setTimeout(resolve, ms))
 
 // Fetch and parse recent transfers for a wallet
 async function fetchTransfers(wallet) {
@@ -45,7 +44,6 @@ async function fetchTransfers(wallet) {
 	for (const { signature } of sigInfos) {
 		if (lastSignatures[wallet] === signature) break
 
-		// <-- вот эта строка изменена -->
 		const tx = await connection.getParsedTransaction(signature, {
 			commitment: 'confirmed',
 			maxSupportedTransactionVersion: 0,
@@ -71,37 +69,32 @@ async function fetchTransfers(wallet) {
 }
 
 // Main check function
-// Main check function
 async function checkForMatches() {
-	const actionCounts = {}
-
+	// Process each wallet's transfers and update heldMints
 	for (const wallet of WATCHED_WALLETS) {
 		const tr = await fetchTransfers(wallet)
-		// Оставляем только покупки
-		const buys = tr.filter(t => t.type === 'BUY')
-		// Уникальные минты (на случай, если один кошелёк купил токен дважды)
-		const uniqueBuys = new Set(buys.map(t => t.mint))
 
-		for (const mint of uniqueBuys) {
-			if (!actionCounts[mint]) {
-				actionCounts[mint] = {
-					wallets: new Set(),
-				}
+		for (const { mint, type } of tr) {
+			if (!heldMints[mint]) heldMints[mint] = new Set()
+
+			if (type === 'BUY') {
+				heldMints[mint].add(wallet)
+			} else if (type === 'SELL') {
+				heldMints[mint].delete(wallet)
 			}
-			actionCounts[mint].wallets.add(wallet)
 		}
 
 		await sleep(1000) // mitigate rate limits
 	}
 
-	for (const [mint, info] of Object.entries(actionCounts)) {
-		// Если купили как минимум два разных кошелька
-		if (info.wallets.size >= 2 && !notifiedMints.has(mint)) {
+	// Notify if two or more wallets currently hold the same mint
+	for (const [mint, walletsSet] of Object.entries(heldMints)) {
+		if (walletsSet.size >= 2 && !notifiedMints.has(mint)) {
 			notifiedMints.add(mint)
 			bot
 				.sendMessage(
 					CHAT_ID,
-					`🚨 (H-H-HAUNTAHOLICS REAL HAUNTED MOUND) ${info.wallets.size} разных кошелька купили токен ${mint}`
+					`🚨 ${walletsSet.size} разных кошелька(ов) купили и ещё не продали токен ${mint}`
 				)
 				.catch(err => console.error('Telegram error:', err.message))
 		}
